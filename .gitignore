@@ -1,0 +1,19 @@
+# Environment — contains secrets, never commit
+.env
+
+# Encrypted Schwab OAuth tokens
+.schwab-tokens
+
+# Account mappings contain real account numbers and Sheet IDs
+config/account-mappings.json
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
