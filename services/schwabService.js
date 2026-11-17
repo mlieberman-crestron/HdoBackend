@@ -70,6 +70,29 @@ async function getHoldings(accountNumber) {
   return response.json();
 }
 
+async function getBalances() {
+  const token = await getValidToken();
+  const response = await fetch(`${SCHWAB_API}/trader/v1/accounts`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Schwab API error ${response.status}: ${body}`);
+  }
+  const data = await response.json();
+  const balances = {};
+  for (const a of data) {
+    const acct = a.securitiesAccount;
+    if (!acct?.accountNumber) continue;
+    const b = acct.currentBalances ?? {};
+    balances[acct.accountNumber] = {
+      totalValue: b.liquidationValue ?? null,
+      cash: b.cashBalance ?? b.totalCash ?? null,
+    };
+  }
+  return balances;
+}
+
 /**
  * Fetch live quotes for an array of ticker symbols.
  * Returns an object keyed by symbol, each with { price, annualDividend, dividendYield }.
@@ -124,4 +147,4 @@ async function proactiveRefresh() {
   }
 }
 
-module.exports = { getHoldings, getQuotes, proactiveRefresh };
+module.exports = { getHoldings, getBalances, getQuotes, proactiveRefresh };

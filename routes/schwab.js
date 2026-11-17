@@ -84,7 +84,17 @@ router.get('/callback', async (req, res) => {
 // GET /schwab/status
 router.get('/status', requireAuth, (_req, res) => {
   const tokenData = schwabTokens['default'];
-  res.json({ connected: !!tokenData?.access_token });
+  if (!tokenData?.access_token) {
+    return res.json({ connected: false });
+  }
+  const expiresAt = tokenData.acquired_at + (tokenData.expires_in * 1000);
+  const refreshExpiresAt = tokenData.acquired_at + (7 * 24 * 60 * 60 * 1000);
+  const now = Date.now();
+  // Access token expired AND refresh token expired → need full re-auth
+  if (now > expiresAt && now > refreshExpiresAt) {
+    return res.json({ connected: false });
+  }
+  res.json({ connected: true });
 });
 
 // GET /schwab/accounts
@@ -108,6 +118,76 @@ router.get('/accounts', requireAuth, async (req, res) => {
         }))
       : [];
     res.json(accounts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /schwab/portfolio-value — market value and cost basis per account
+router.get('/portfolio-value', requireAuth, async (_req, res) => {
+  const schwabService = require('../services/schwabService');
+  try {
+    const allAccounts = await schwabService.getHoldings();
+    const accounts = allAccounts.map((acct) => {
+      const accountNumber = acct.securitiesAccount?.accountNumber ?? 'unknown';
+      const positions = acct.securitiesAccount?.positions ?? [];
+      let marketValue = 0;
+      let costBasis = 0;
+      for (const pos of positions) {
+        marketValue += pos.marketValue ?? 0;
+        costBasis += (pos.averagePrice ?? 0) * (pos.longQuantity ?? pos.shortQuantity ?? 0);
+      }
+      marketValue = Math.round(marketValue * 100) / 100;
+      costBasis = Math.round(costBasis * 100) / 100;
+      return {
+        accountNumber,
+        marketValue,
+        costBasis,
+        gainLoss: Math.round((marketValue - costBasis) * 100) / 100,
+        gainLossPct: costBasis > 0 ? Math.round((marketValue - costBasis) / costBasis * 10000) / 100 : 0,
+        positionCount: positions.length,
+      };
+    });
+    res.json({ accounts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /schwab/prices — current price per symbol across all accounts
+router.get('/prices', requireAuth, async (_req, res) => {
+  const schwabService = require('../services/schwabService');
+  try {
+    const allAccounts = await schwabService.getHoldings();
+    const seen = new Map();
+    for (const acct of allAccounts) {
+      for (const pos of acct.securitiesAccount?.positions ?? []) {
+        const symbol = pos.instrument?.symbol;
+        const qty = pos.longQuantity ?? pos.shortQuantity ?? 0;
+        if (!symbol || qty === 0) continue;
+        const price = Math.round((pos.marketValue / qty) * 10000) / 10000;
+        if (!seen.has(symbol)) {
+          seen.set(symbol, { symbol, price, marketValue: pos.marketValue, qty });
+        } else {
+          const existing = seen.get(symbol);
+          existing.marketValue += pos.marketValue;
+          existing.qty += qty;
+          existing.price = Math.round((existing.marketValue / existing.qty) * 10000) / 10000;
+        }
+      }
+    }
+    const prices = Array.from(seen.values()).sort((a, b) => a.symbol.localeCompare(b.symbol));
+    res.json({ prices });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /schwab/balances — { [accountNumber]: { totalValue, cash } }
+router.get('/balances', requireAuth, async (_req, res) => {
+  const schwabService = require('../services/schwabService');
+  try {
+    res.json({ balances: await schwabService.getBalances() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

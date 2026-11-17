@@ -1,0 +1,3 @@
+@echo off
+echo Starting ngrok tunnel...
+ngrok http --domain=preintellectually-unextensible-sherilyn.ngrok-free.dev 3000

@@ -66,7 +66,7 @@ function positionToRow(pos) {
   const avg = pos.averagePrice;
   return [
     instrument.symbol ?? '',
-    Math.round(qty * 1000) / 1000,                                     // 3 dp — fractional shares
+    Math.round(qty * 10000) / 10000,                                   // 4 dp — fractional shares
     avg != null ? Math.round(avg * 10000) / 10000 : '',                // 4 dp — sub-cent precision
   ];
 }
@@ -316,4 +316,36 @@ async function readPortfolioMetadata(spreadsheetId) {
   ];
 }
 
-module.exports = { writeHoldingsToSheet, readHoldingsFromSheet, restoreBackupColumns, checkSheetPermissions, readPortfolioMetadata };
+// Read prices from Import!B410:C470 (symbol=B, price=C)
+// "3 Non-HDO"!B9:P30 (symbol=B, price=P, offset 14)
+// "2 HDO"!B9:T82 (symbol=B, price=T, offset 18)
+async function readPriceColumn(spreadsheetId) {
+  const auth = getAuthClient();
+  const sheets = google.sheets({ version: 'v4', auth });
+  const res = await sheets.spreadsheets.values.batchGet({
+    spreadsheetId,
+    ranges: ["'Import'!B410:C470", "'3 Non-HDO'!B9:P30", "'2 HDO'!B9:T82"],
+    valueRenderOption: 'UNFORMATTED_VALUE',
+  });
+
+  const priceMap = {};
+
+  const [importRows, nonHdoRows, hdoRows] = res.data.valueRanges.map((vr) => vr.values ?? []);
+
+  for (const row of importRows) {
+    const symbol = (row[0] ?? '').toString().trim();
+    if (symbol && row[1] !== undefined && row[1] !== '') priceMap[symbol] = Number(row[1]);
+  }
+  for (const row of nonHdoRows) {
+    const symbol = (row[0] ?? '').toString().trim();
+    if (symbol && row[14] !== undefined && row[14] !== '') priceMap[symbol] = Number(row[14]);
+  }
+  for (const row of hdoRows) {
+    const symbol = (row[0] ?? '').toString().trim();
+    if (symbol && row[18] !== undefined && row[18] !== '') priceMap[symbol] = Number(row[18]);
+  }
+
+  return Object.entries(priceMap).map(([symbol, sheetPrice]) => ({ symbol, sheetPrice }));
+}
+
+module.exports = { writeHoldingsToSheet, readHoldingsFromSheet, readPriceColumn, restoreBackupColumns, checkSheetPermissions, readPortfolioMetadata };

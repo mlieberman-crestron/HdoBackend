@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls c:SourceHdoBackend*.js)"
+      "Bash(ls c:SourceHdoBackend*.js)",
+      "Bash(ls C:/Source/HdoBackend/*.js)"
     ]
   }
 }
